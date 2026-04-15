@@ -178,7 +178,7 @@ static std::tuple<double, double> solve_yaw(
     double a = yaw_lo;
     double b = yaw_hi;
 
-    double x = a + 0.5 * (b - a);
+    double x = a + golden * (b - a);
     double w = x;
     double v = x;
 
