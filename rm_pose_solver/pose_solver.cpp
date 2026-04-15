@@ -1,9 +1,8 @@
 /**
- * rm_pose_solver: Yaw optimization via reprojection + light bar refinement.
+ * rm_pose_solver: Yaw optimization via reprojection.
  *
- * Exposes two functions to Python via pybind11:
- *   1. solve_yaw(...)  - L-BFGS-B over yaw to minimize reprojection error
- *   2. refine_lights(...) - Otsu threshold on R/B channel, find closest contour
+ * Exposes one function to Python via pybind11:
+ *   1. solve_yaw(...)  - bounded 1-D search over yaw
  */
 
 #include <pybind11/pybind11.h>
@@ -16,7 +15,6 @@
 #include <tuple>
 #include <vector>
 #include <stdexcept>
-#include <limits>
 
 namespace py = pybind11;
 
@@ -62,24 +60,11 @@ static inline cv::Vec3d euler_to_rvec_fast(
     return rvec;
 }
 
-/// Reproject 4 object points and return RMS pixel error.
-static double reprojection_rms(
-    const cv::Mat& object_pts,    // (4,3) CV_64F
-    const cv::Vec3d& rvec,
-    const cv::Vec3d& tvec,
-    const cv::Mat& K,
-    const cv::Mat& dist,
-    const std::vector<cv::Point2d>& observed)
+/// Convert an axis-angle vector from Otto standard coordinates to OpenCV coordinates.
+/// Matches Orientation.to_cv2_coords(): (-y, -z, x)
+static inline cv::Vec3d standard_rvec_to_cv2(const cv::Vec3d& rvec_std)
 {
-    std::vector<cv::Point2d> projected;
-    cv::projectPoints(object_pts, rvec, tvec, K, dist, projected);
-    double sq = 0.0;
-    for (int i = 0; i < 4; ++i) {
-        double dx = projected[i].x - observed[i].x;
-        double dy = projected[i].y - observed[i].y;
-        sq += dx * dx + dy * dy;
-    }
-    return std::sqrt(0.25 * sq);
+    return cv::Vec3d(-rvec_std[1], -rvec_std[2], rvec_std[0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +84,7 @@ static double reprojection_rms(
  *   fixed_roll    : double          – roll  in radians (from odometry)
  *   yaw_lo        : double          – search lower bound (rad), default -π
  *   yaw_hi        : double          – search upper bound (rad), default  π
- *   max_iter      : int             – L-BFGS-B iterations, default 50
+ *   max_iter      : int             – max Brent iterations, default 50
  *
  * Returns: (optimized_yaw: double, reprojection_error: double)
  */
@@ -121,6 +106,21 @@ static std::tuple<double, double> solve_yaw(
     auto pm  = plate_matrix.unchecked<2>();   // (4,3)
     auto km  = camera_matrix.unchecked<2>();  // (3,3)
     auto dc  = dist_coeffs.unchecked<1>();    // (N,)
+
+    if (ip.shape(0) != 4 || ip.shape(1) != 2)
+        throw std::invalid_argument("image_points must be shape (4, 2)");
+    if (pos.shape(0) != 3)
+        throw std::invalid_argument("position_xyz must be shape (3,)");
+    if (pm.shape(0) != 4 || pm.shape(1) != 3)
+        throw std::invalid_argument("plate_matrix must be shape (4, 3)");
+    if (km.shape(0) != 3 || km.shape(1) != 3)
+        throw std::invalid_argument("camera_matrix must be shape (3, 3)");
+    if (dc.shape(0) < 4)
+        throw std::invalid_argument("dist_coeffs must contain at least 4 values");
+    if (!(yaw_lo < yaw_hi))
+        throw std::invalid_argument("yaw_lo must be less than yaw_hi");
+    if (max_iter <= 0)
+        throw std::invalid_argument("max_iter must be positive");
 
     std::array<cv::Point2d, 4> observed{};
     RM_UNROLL_4
@@ -153,8 +153,9 @@ static std::tuple<double, double> solve_yaw(
 
     // --- loss: squared reprojection error (no sqrt) ---
     auto loss = [&](double y) -> double {
-        cv::Vec3d rv = euler_to_rvec_fast(y, sin_pitch, cos_pitch, sin_roll, cos_roll);
-        cv::projectPoints(obj, rv, tvec, K, dist, projected);
+        cv::Vec3d rv_std = euler_to_rvec_fast(y, sin_pitch, cos_pitch, sin_roll, cos_roll);
+        cv::Vec3d rv_cv2 = standard_rvec_to_cv2(rv_std);
+        cv::projectPoints(obj, rv_cv2, tvec, K, dist, projected);
 
         double sq = 0.0;
         RM_UNROLL_4
@@ -264,7 +265,7 @@ static std::tuple<double, double> solve_yaw(
 
 PYBIND11_MODULE(_rm_pose_solver, m)
 {
-    m.doc() = "RoboMaster pose solver: yaw optimisation but fast";
+    m.doc() = "RoboMaster pose solver: yaw optimisation";
 
     m.def("solve_yaw", &solve_yaw,
         py::arg("image_points"),

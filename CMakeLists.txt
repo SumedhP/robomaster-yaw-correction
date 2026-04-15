@@ -39,7 +39,7 @@ if(NOT pybind11_FOUND)
 endif()
 
 # ----- OpenCV ---------------------------------------------------------------
-find_package(OpenCV REQUIRED COMPONENTS core imgproc calib3d)
+find_package(OpenCV REQUIRED COMPONENTS core calib3d)
 
 # ----- Extension module -----------------------------------------------------
 pybind11_add_module(_rm_pose_solver MODULE rm_pose_solver/pose_solver.cpp)

@@ -9,13 +9,29 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "rm-pose-solver"
 version = "0.1.0"
-description = "RoboMaster plate pose solver: yaw optimisation + light-bar refinement"
+description = "RoboMaster plate pose solver: high-performance yaw optimisation"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
+keywords = ["robomaster", "pose-estimation", "yaw", "pybind11", "opencv"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: C++",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Typing :: Typed",
+]
 dependencies = [
     "numpy>=1.24",
 ]
+
+[project.urls]
+Homepage = "https://github.com/SumedhP/robomaster-yaw-correction"
+Repository = "https://github.com/SumedhP/robomaster-yaw-correction"
+Issues = "https://github.com/SumedhP/robomaster-yaw-correction/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -29,6 +45,11 @@ dev = [
 [tool.scikit-build]
 wheel.packages = ["rm_pose_solver"]
 cmake.build-type = "Release"
+sdist.include = [
+    "rm_pose_solver/__init__.pyi",
+    "rm_pose_solver/_rm_pose_solver.pyi",
+    "rm_pose_solver/py.typed",
+]
 # Expose the pybind11 cmake dir so CMakeLists.txt can find_package(pybind11)
 cmake.args = ["-DCMAKE_BUILD_PARALLEL_LEVEL=4"]
 
@@ -36,16 +57,10 @@ cmake.args = ["-DCMAKE_BUILD_PARALLEL_LEVEL=4"]
 [tool.ruff]
 target-version = "py310"
 line-length = 88
-
-[tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "RET", "ANN", "RUF"]
-ignore = ["ANN101", "ANN102"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["ANN", "S101"]
-
-[tool.ty]
-target-version = "3.10"
+[tool.ruff.per-file-ignores]
+"test_pose_solver.py" = ["ANN", "S101"]
 
 [tool.pytest.ini_options]
 testpaths = ["test_pose_solver.py"]
