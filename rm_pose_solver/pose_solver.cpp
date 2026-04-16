@@ -1,8 +1,9 @@
 /**
  * rm_pose_solver: Yaw optimization via reprojection.
  *
- * Exposes one function to Python via pybind11:
- *   1. solve_yaw(...)  - bounded 1-D search over yaw
+ * Exposes two functions to Python via pybind11:
+ *   1. solve_yaw(...)             - bounded 1-D search over yaw
+ *   2. solve_yaw_brute_force(...) - fixed sweep over yaw in [-60 deg, 60 deg]
  */
 
 #include <pybind11/pybind11.h>
@@ -12,6 +13,7 @@
 #include <opencv2/opencv.hpp>
 #include <cmath>
 #include <array>
+#include <limits>
 #include <tuple>
 #include <vector>
 #include <stdexcept>
@@ -67,6 +69,108 @@ static inline cv::Vec3d standard_rvec_to_cv2(const cv::Vec3d& rvec_std)
     return cv::Vec3d(-rvec_std[1], -rvec_std[2], rvec_std[0]);
 }
 
+struct SolveInputs {
+    std::array<cv::Point2d, 4> observed;
+    cv::Vec3d tvec;
+    cv::Mat object_points;
+    cv::Mat camera_matrix;
+    cv::Mat dist_coeffs;
+    double sin_pitch;
+    double cos_pitch;
+    double sin_roll;
+    double cos_roll;
+};
+
+static SolveInputs unpack_inputs(
+    py::array_t<double> image_points,
+    py::array_t<double> position_xyz,
+    py::array_t<double> plate_matrix,
+    py::array_t<double> camera_matrix,
+    py::array_t<double> dist_coeffs,
+    double fixed_pitch,
+    double fixed_roll)
+{
+    auto ip  = image_points.unchecked<2>();   // (4,2)
+    auto pos = position_xyz.unchecked<1>();   // (3,)
+    auto pm  = plate_matrix.unchecked<2>();   // (4,3)
+    auto km  = camera_matrix.unchecked<2>();  // (3,3)
+    auto dc  = dist_coeffs.unchecked<1>();    // (N,)
+
+    if (ip.shape(0) != 4 || ip.shape(1) != 2)
+        throw std::invalid_argument("image_points must be shape (4, 2)");
+    if (pos.shape(0) != 3)
+        throw std::invalid_argument("position_xyz must be shape (3,)");
+    if (pm.shape(0) != 4 || pm.shape(1) != 3)
+        throw std::invalid_argument("plate_matrix must be shape (4, 3)");
+    if (km.shape(0) != 3 || km.shape(1) != 3)
+        throw std::invalid_argument("camera_matrix must be shape (3, 3)");
+    if (dc.shape(0) < 4)
+        throw std::invalid_argument("dist_coeffs must contain at least 4 values");
+
+    SolveInputs inputs{};
+
+    RM_UNROLL_4
+    for (int i = 0; i < 4; ++i)
+        inputs.observed[i] = {ip(i, 0), ip(i, 1)};
+
+    inputs.tvec = cv::Vec3d(pos(0), pos(1), pos(2));
+
+    inputs.object_points = cv::Mat(4, 3, CV_64F);
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 3; ++j)
+            inputs.object_points.at<double>(i, j) = pm(i, j);
+    }
+
+    inputs.camera_matrix = cv::Mat(3, 3, CV_64F);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j)
+            inputs.camera_matrix.at<double>(i, j) = km(i, j);
+    }
+
+    const int n_dist = static_cast<int>(dc.shape(0));
+    inputs.dist_coeffs = cv::Mat(1, n_dist, CV_64F);
+    for (int i = 0; i < n_dist; ++i)
+        inputs.dist_coeffs.at<double>(0, i) = dc(i);
+
+    inputs.sin_pitch = std::sin(fixed_pitch);
+    inputs.cos_pitch = std::cos(fixed_pitch);
+    inputs.sin_roll = std::sin(fixed_roll);
+    inputs.cos_roll = std::cos(fixed_roll);
+
+    return inputs;
+}
+
+static inline double squared_reprojection_error(
+    const SolveInputs& inputs,
+    double yaw,
+    std::vector<cv::Point2d>& projected)
+{
+    cv::Vec3d rv_std = euler_to_rvec_fast(
+        yaw,
+        inputs.sin_pitch,
+        inputs.cos_pitch,
+        inputs.sin_roll,
+        inputs.cos_roll);
+    cv::Vec3d rv_cv2 = standard_rvec_to_cv2(rv_std);
+
+    cv::projectPoints(
+        inputs.object_points,
+        rv_cv2,
+        inputs.tvec,
+        inputs.camera_matrix,
+        inputs.dist_coeffs,
+        projected);
+
+    double sq = 0.0;
+    RM_UNROLL_4
+    for (int i = 0; i < 4; ++i) {
+        const double dx = projected[i].x - inputs.observed[i].x;
+        const double dy = projected[i].y - inputs.observed[i].y;
+        sq += dx * dx + dy * dy;
+    }
+    return sq;
+}
+
 // ---------------------------------------------------------------------------
 // 1. solve_yaw
 // ---------------------------------------------------------------------------
@@ -100,72 +204,24 @@ static std::tuple<double, double> solve_yaw(
     double yaw_hi =  M_PI,
     int    max_iter = 50)
 {
-    // --- unpack numpy → cv::Mat / std::vector ---
-    auto ip  = image_points.unchecked<2>();   // (4,2)
-    auto pos = position_xyz.unchecked<1>();   // (3,)
-    auto pm  = plate_matrix.unchecked<2>();   // (4,3)
-    auto km  = camera_matrix.unchecked<2>();  // (3,3)
-    auto dc  = dist_coeffs.unchecked<1>();    // (N,)
-
-    if (ip.shape(0) != 4 || ip.shape(1) != 2)
-        throw std::invalid_argument("image_points must be shape (4, 2)");
-    if (pos.shape(0) != 3)
-        throw std::invalid_argument("position_xyz must be shape (3,)");
-    if (pm.shape(0) != 4 || pm.shape(1) != 3)
-        throw std::invalid_argument("plate_matrix must be shape (4, 3)");
-    if (km.shape(0) != 3 || km.shape(1) != 3)
-        throw std::invalid_argument("camera_matrix must be shape (3, 3)");
-    if (dc.shape(0) < 4)
-        throw std::invalid_argument("dist_coeffs must contain at least 4 values");
     if (!(yaw_lo < yaw_hi))
         throw std::invalid_argument("yaw_lo must be less than yaw_hi");
     if (max_iter <= 0)
         throw std::invalid_argument("max_iter must be positive");
 
-    std::array<cv::Point2d, 4> observed{};
-    RM_UNROLL_4
-    for (int i = 0; i < 4; ++i)
-        observed[i] = {ip(i, 0), ip(i, 1)};
-
-    cv::Vec3d tvec(pos(0), pos(1), pos(2));
-
-    cv::Mat obj(4, 3, CV_64F);
-    for (int i = 0; i < 4; ++i)
-        for (int j = 0; j < 3; ++j)
-            obj.at<double>(i, j) = pm(i, j);
-
-    cv::Mat K(3, 3, CV_64F);
-    for (int i = 0; i < 3; ++i)
-        for (int j = 0; j < 3; ++j)
-            K.at<double>(i, j) = km(i, j);
-
-    int n_dist = (int)dc.shape(0);
-    cv::Mat dist(1, n_dist, CV_64F);
-    for (int i = 0; i < n_dist; ++i)
-        dist.at<double>(0, i) = dc(i);
-
-    const double sin_pitch = std::sin(fixed_pitch);
-    const double cos_pitch = std::cos(fixed_pitch);
-    const double sin_roll = std::sin(fixed_roll);
-    const double cos_roll = std::cos(fixed_roll);
+    const SolveInputs inputs = unpack_inputs(
+        image_points,
+        position_xyz,
+        plate_matrix,
+        camera_matrix,
+        dist_coeffs,
+        fixed_pitch,
+        fixed_roll);
 
     std::vector<cv::Point2d> projected(4);
 
     // --- loss: squared reprojection error (no sqrt) ---
-    auto loss = [&](double y) -> double {
-        cv::Vec3d rv_std = euler_to_rvec_fast(y, sin_pitch, cos_pitch, sin_roll, cos_roll);
-        cv::Vec3d rv_cv2 = standard_rvec_to_cv2(rv_std);
-        cv::projectPoints(obj, rv_cv2, tvec, K, dist, projected);
-
-        double sq = 0.0;
-        RM_UNROLL_4
-        for (int i = 0; i < 4; ++i) {
-            double dx = projected[i].x - observed[i].x;
-            double dy = projected[i].y - observed[i].y;
-            sq += dx * dx + dy * dy;
-        }
-        return sq;
-    };
+    auto loss = [&](double y) -> double { return squared_reprojection_error(inputs, y, projected); };
 
     // -----------------------------------------------------------------------
     // Brent’s method (bounded)
@@ -260,6 +316,83 @@ static std::tuple<double, double> solve_yaw(
 }
 
 // ---------------------------------------------------------------------------
+// 2. solve_yaw_brute_force
+// ---------------------------------------------------------------------------
+
+/**
+ * Brute-force yaw sweep in fixed range [-60°, +60°].
+ *
+ * Parameters (all numpy arrays / scalars):
+ *   image_points  : (4,2) float64  – observed pixel keypoints [BL,BR,TR,TL]
+ *   position_xyz  : (3,)  float64  – tvec in camera frame (x,y,z metres)
+ *   plate_matrix  : (4,3) float64  – 3-D object points of plate corners
+ *   camera_matrix : (3,3) float64  – intrinsic K
+ *   dist_coeffs   : (N,)  float64  – distortion coefficients
+ *   fixed_pitch   : double          – pitch in radians (from odometry)
+ *   fixed_roll    : double          – roll  in radians (from odometry)
+ *   sweep_steps   : int             – number of samples across [-60°, 60°]
+ *
+ * Returns: (optimized_yaw: double, reprojection_error: double)
+ */
+static std::tuple<double, double> solve_yaw_brute_force(
+    py::array_t<double> image_points,
+    py::array_t<double> position_xyz,
+    py::array_t<double> plate_matrix,
+    py::array_t<double> camera_matrix,
+    py::array_t<double> dist_coeffs,
+    double fixed_pitch,
+    double fixed_roll,
+    int sweep_steps = 240)
+{
+    if (sweep_steps < 2)
+        throw std::invalid_argument("sweep_steps must be at least 2");
+
+    const SolveInputs inputs = unpack_inputs(
+        image_points,
+        position_xyz,
+        plate_matrix,
+        camera_matrix,
+        dist_coeffs,
+        fixed_pitch,
+        fixed_roll);
+
+    constexpr double kYawMin = -60.0 * M_PI / 180.0;
+    constexpr double kYawMax =  60.0 * M_PI / 180.0;
+
+    const double step = (kYawMax - kYawMin) / static_cast<double>(sweep_steps - 1);
+
+    std::vector<cv::Point2d> projected(4);
+
+    double best_yaw = kYawMin;
+    double best_sq = std::numeric_limits<double>::infinity();
+
+    int i = 0;
+    for (; i + 3 < sweep_steps; i += 4) {
+        RM_UNROLL_4
+        for (int lane = 0; lane < 4; ++lane) {
+            const double yaw = kYawMin + static_cast<double>(i + lane) * step;
+            const double sq = squared_reprojection_error(inputs, yaw, projected);
+            if (sq < best_sq) {
+                best_sq = sq;
+                best_yaw = yaw;
+            }
+        }
+    }
+
+    for (; i < sweep_steps; ++i) {
+        const double yaw = kYawMin + static_cast<double>(i) * step;
+        const double sq = squared_reprojection_error(inputs, yaw, projected);
+        if (sq < best_sq) {
+            best_sq = sq;
+            best_yaw = yaw;
+        }
+    }
+
+    const double final_rms = std::sqrt(0.25 * best_sq);
+    return {best_yaw, final_rms};
+}
+
+// ---------------------------------------------------------------------------
 // Module definition
 // ---------------------------------------------------------------------------
 
@@ -292,6 +425,32 @@ Args:
     yaw_lo        (float): search lower bound, default -π/2
     yaw_hi        (float): search upper bound, default  π/2
     max_iter      (int):   maximum optimiser iterations, default 50
+
+Returns:
+    tuple[float, float]: (optimized_yaw_rad, reprojection_error_pixels)
+)doc");
+
+    m.def("solve_yaw_brute_force", &solve_yaw_brute_force,
+        py::arg("image_points"),
+        py::arg("position_xyz"),
+        py::arg("plate_matrix"),
+        py::arg("camera_matrix"),
+        py::arg("dist_coeffs"),
+        py::arg("fixed_pitch"),
+        py::arg("fixed_roll"),
+        py::arg("sweep_steps") = 240,
+        R"doc(
+Brute-force yaw search in fixed range [-60°, 60°].
+
+Args:
+    image_points  (np.ndarray[float64, (4,2)]): observed pixel keypoints [BL,BR,TR,TL]
+    position_xyz  (np.ndarray[float64, (3,)]): tvec in camera frame (metres)
+    plate_matrix  (np.ndarray[float64, (4,3)]): 3-D plate corner object points
+    camera_matrix (np.ndarray[float64, (3,3)]): intrinsic K matrix
+    dist_coeffs   (np.ndarray[float64, (N,)]): distortion coefficients
+    fixed_pitch   (float): pitch in radians (from odometry/IMU)
+    fixed_roll    (float): roll  in radians (from odometry/IMU)
+    sweep_steps   (int):   number of sampled yaws over [-60°, 60°], default 240
 
 Returns:
     tuple[float, float]: (optimized_yaw_rad, reprojection_error_pixels)

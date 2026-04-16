@@ -18,3 +18,15 @@ def solve_yaw(
     yaw_hi: float = ...,
     max_iter: int = ...,
 ) -> tuple[float, float]: ...
+
+
+def solve_yaw_brute_force(
+    image_points: Float64Array,
+    position_xyz: Float64Array,
+    plate_matrix: Float64Array,
+    camera_matrix: Float64Array,
+    dist_coeffs: Float64Array,
+    fixed_pitch: float,
+    fixed_roll: float,
+    sweep_steps: int = ...,
+) -> tuple[float, float]: ...

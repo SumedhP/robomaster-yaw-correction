@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from rm_pose_solver import solve_yaw
+from rm_pose_solver import solve_yaw, solve_yaw_brute_force
 import cv2
 
 plate_matrix = np.array([
@@ -37,8 +37,20 @@ for deg in range(-50, 51, 10):
     rvec = _otto_euler_to_cv2_rvec(true_yaw, 0.0, 0.0)
     pts, _ = cv2.projectPoints(plate_matrix, rvec, tvec, K, dist)
     image_points = pts.reshape(-1, 2)
-    yaw, err = solve_yaw(
+
+    yaw_brent, err_brent = solve_yaw(
         image_points, tvec, plate_matrix, K, dist,
         fixed_pitch=0.0, fixed_roll=0.0,
     )
-    print(f"True: {deg:4d}, Optimized: {math.degrees(yaw):8.2f}, Err: {err:.4f}")
+
+    yaw_brute, err_brute = solve_yaw_brute_force(
+        image_points, tvec, plate_matrix, K, dist,
+        fixed_pitch=0.0, fixed_roll=0.0,
+    )
+
+    print(
+        "True: "
+        f"{deg:4d} | "
+        f"Brent: {math.degrees(yaw_brent):8.2f} deg (err={err_brent:7.4f}) | "
+        f"Brute: {math.degrees(yaw_brute):8.2f} deg (err={err_brute:7.4f})"
+    )

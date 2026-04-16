@@ -136,3 +136,75 @@ def test_solve_yaw_bad_input(plate_setup):
 
     with pytest.raises(Exception):
         solve_yaw(bad, tvec, plate_matrix, K, dist, 0.0, 0.0)
+
+
+def test_solve_yaw_brute_force_known_angle(plate_setup):
+    """Brute-force sweep should recover in-range yaw values accurately."""
+    from rm_pose_solver import solve_yaw_brute_force
+
+    plate_matrix, K, dist = plate_setup
+    true_yaw = math.radians(35.0)
+
+    rvec = _otto_euler_to_cv2_rvec(true_yaw, 0.0, 0.0)
+    tvec = np.array([0.0, 0.0, 3.0], dtype=np.float64)
+    image_points = _project(plate_matrix, rvec, tvec, K, dist)
+
+    yaw, err = solve_yaw_brute_force(
+        image_points,
+        tvec,
+        plate_matrix,
+        K,
+        dist,
+        fixed_pitch=0.0,
+        fixed_roll=0.0,
+    )
+
+    assert abs(yaw - true_yaw) < math.radians(0.8), (
+        f"Expected ~{math.degrees(true_yaw):.1f}°, got {math.degrees(yaw):.1f}°"
+    )
+    assert err < 2.0
+
+
+def test_solve_yaw_brute_force_clamps_to_sweep_bounds(plate_setup):
+    """Out-of-range true yaw should map to nearest brute-force sweep boundary."""
+    from rm_pose_solver import solve_yaw_brute_force
+
+    plate_matrix, K, dist = plate_setup
+    true_yaw = math.radians(70.0)
+
+    rvec = _otto_euler_to_cv2_rvec(true_yaw, 0.0, 0.0)
+    tvec = np.array([0.0, 0.0, 3.0], dtype=np.float64)
+    image_points = _project(plate_matrix, rvec, tvec, K, dist)
+
+    yaw, _ = solve_yaw_brute_force(
+        image_points,
+        tvec,
+        plate_matrix,
+        K,
+        dist,
+        fixed_pitch=0.0,
+        fixed_roll=0.0,
+    )
+
+    assert abs(yaw - math.radians(60.0)) < math.radians(0.8)
+
+
+def test_solve_yaw_brute_force_rejects_yaw_bounds_keywords(plate_setup):
+    """Brute-force solver should not expose yaw_lo/yaw_hi kwargs."""
+    from rm_pose_solver import solve_yaw_brute_force
+
+    plate_matrix, K, dist = plate_setup
+    tvec = np.array([0.0, 0.0, 3.0], dtype=np.float64)
+    image_points = _project(plate_matrix, np.zeros(3), tvec, K, dist)
+
+    with pytest.raises(TypeError):
+        solve_yaw_brute_force(
+            image_points,
+            tvec,
+            plate_matrix,
+            K,
+            dist,
+            fixed_pitch=0.0,
+            fixed_roll=0.0,
+            yaw_lo=-1.0,
+        )
