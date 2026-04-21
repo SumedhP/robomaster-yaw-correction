@@ -54,6 +54,8 @@ def _simulate_background_load(seed: int) -> None:
     a = rng.random((48, 48), dtype=np.float64)
     b = rng.random((48, 48), dtype=np.float64)
     _ = a @ b
+    for _ in range(1000):
+        _ = math.sqrt(rng.random())
 
 
 def _cold_call_latency_ms(num_threads: int, seed: int) -> float:
@@ -71,7 +73,6 @@ def _cold_call_latency_ms(num_threads: int, seed: int) -> float:
         fixed_roll=0.0,
         yaw_lo=math.radians(-60.0),
         yaw_hi=math.radians(60.0),
-        num_threads=num_threads,
     )
     elapsed_ns = time.perf_counter_ns() - start
     return elapsed_ns / 1e6
