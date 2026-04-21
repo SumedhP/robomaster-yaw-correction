@@ -40,12 +40,13 @@ endif()
 
 # ----- OpenCV ---------------------------------------------------------------
 find_package(OpenCV REQUIRED COMPONENTS core calib3d)
+find_package(Threads REQUIRED)
 
 # ----- Extension module -----------------------------------------------------
 pybind11_add_module(_rm_pose_solver MODULE rm_pose_solver/pose_solver.cpp)
 
 target_include_directories(_rm_pose_solver PRIVATE ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(_rm_pose_solver PRIVATE ${OpenCV_LIBS})
+target_link_libraries(_rm_pose_solver PRIVATE ${OpenCV_LIBS} Threads::Threads)
 
 if(MSVC)
 	target_compile_options(_rm_pose_solver PRIVATE
