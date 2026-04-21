@@ -61,7 +61,7 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 
 	if(RM_POSE_SOLVER_FAST_MATH)
 		target_compile_options(_rm_pose_solver PRIVATE
-			-ffast-math -fno-math-errno -fno-trapping-math
+			-ffast-math -fno-math-errno -fno-trapping-math -ffp-contract=fast
 		)
 	endif()
 
@@ -76,6 +76,10 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 			-march=native -mtune=native
 		)
 	endif()
+
+	target_compile_options(_rm_pose_solver PRIVATE
+		-fno-semantic-interposition
+	)
 endif()
 
 if(RM_POSE_SOLVER_ENABLE_IPO)
