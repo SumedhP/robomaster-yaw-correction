@@ -16,6 +16,6 @@ solve_yaw_brute_force(image_points, position_xyz, plate_matrix, camera_matrix,
 
 from __future__ import annotations
 
-from ._rm_pose_solver import solve_yaw, solve_yaw_brute_force  # pyright: ignore[reportMissingModuleSource]
+from ._rm_pose_solver import solve_yaw  # pyright: ignore[reportMissingModuleSource]
 
-__all__ = ["solve_yaw", "solve_yaw_brute_force"]
+__all__ = ["solve_yaw"]
