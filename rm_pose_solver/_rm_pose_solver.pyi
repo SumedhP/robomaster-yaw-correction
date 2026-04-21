@@ -11,10 +11,8 @@ def solve_yaw(
     position_xyz: Float64Array,
     plate_matrix: Float64Array,
     camera_matrix: Float64Array,
-    dist_coeffs: Float64Array,
     fixed_pitch: float,
     fixed_roll: float,
     yaw_lo: float = ...,
     yaw_hi: float = ...,
-    num_threads: int = ...,
 ) -> tuple[float, float]: ...

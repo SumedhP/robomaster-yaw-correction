@@ -68,7 +68,6 @@ def _cold_call_latency_ms(num_threads: int, seed: int) -> float:
         tvec,
         plate_matrix,
         K,
-        dist,
         fixed_pitch=0.0,
         fixed_roll=0.0,
         yaw_lo=math.radians(-60.0),
