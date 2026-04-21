@@ -8,7 +8,7 @@ build-backend = "scikit_build_core.build"
 # ---------------------------------------------------------------------------
 [project]
 name = "rm-pose-solver"
-version = "0.1.4"
+version = "0.1.5"
 description = "RoboMaster plate pose solver: high-performance yaw optimisation"
 readme = "README.md"
 license = { text = "MIT" }
