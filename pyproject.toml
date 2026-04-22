@@ -7,14 +7,24 @@ requires = [
 build-backend = "scikit_build_core.build"
 
 # ---------------------------------------------------------------------------
+# System dependencies (must be installed before building the wheel):
+#
+#   Ubuntu / Debian:  sudo apt install libboost-dev libopencv-dev
+#   macOS (Homebrew): brew install boost opencv
+#   Jetson / aarch64: sudo apt install libboost-dev libopencv-dev
+#
+# If Boost is in a non-standard path, add to cmake.args:
+#   "-DBOOST_ROOT=/path/to/boost"
+# ---------------------------------------------------------------------------
+
 [project]
 name = "rm-pose-solver"
-version = "0.2.0"
-description = "RoboMaster plate pose solver: high-performance yaw optimisation"
+version = "0.3.0"
+description = "RoboMaster plate pose solver: dual-Brent yaw optimisation via Boost.Math"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-keywords = ["robomaster", "pose-estimation", "yaw", "pybind11", "opencv"]
+keywords = ["robomaster", "pose-estimation", "yaw", "pybind11", "opencv", "boost"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -30,9 +40,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SumedhP/robomaster-yaw-correction"
+Homepage   = "https://github.com/SumedhP/robomaster-yaw-correction"
 Repository = "https://github.com/SumedhP/robomaster-yaw-correction"
-Issues = "https://github.com/SumedhP/robomaster-yaw-correction/issues"
+Issues     = "https://github.com/SumedhP/robomaster-yaw-correction/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -44,15 +54,18 @@ dev = [
 
 # ---------------------------------------------------------------------------
 [tool.scikit-build]
-wheel.packages = ["rm_pose_solver"]
-cmake.build-type = "Release"
+wheel.packages    = ["rm_pose_solver"]
+cmake.build-type  = "Release"
 sdist.include = [
     "rm_pose_solver/__init__.pyi",
     "rm_pose_solver/_rm_pose_solver.pyi",
     "rm_pose_solver/py.typed",
 ]
-# Expose the pybind11 cmake dir so CMakeLists.txt can find_package(pybind11)
-cmake.args = ["-DCMAKE_BUILD_PARALLEL_LEVEL=4"]
+cmake.args = [
+    "-DCMAKE_BUILD_PARALLEL_LEVEL=4",
+    # Uncomment and set if Boost is not on the default CMake search path:
+    # "-DBOOST_ROOT=/path/to/boost",
+]
 
 # ---------------------------------------------------------------------------
 [tool.ruff]
@@ -65,4 +78,4 @@ select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "RET", "ANN", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["test_pose_solver.py"]
-addopts = ["--strict-markers"]
+addopts   = ["--strict-markers"]

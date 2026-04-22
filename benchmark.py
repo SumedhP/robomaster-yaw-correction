@@ -58,7 +58,7 @@ def _simulate_background_load(seed: int) -> None:
         _ = math.sqrt(rng.random())
 
 
-def _cold_call_latency_ms(num_threads: int, seed: int) -> float:
+def _cold_call_latency_ms(seed: int) -> float:
     _simulate_background_load(seed)
     image_points, tvec = _build_case(seed + 10_000)
 
@@ -81,7 +81,7 @@ def _characterize_threads(thread_counts: tuple[int, ...], n_trials: int) -> None
     median_1t = None
 
     for threads in thread_counts:
-        trials = [_cold_call_latency_ms(threads, seed=i) for i in range(n_trials)]
+        trials = [_cold_call_latency_ms(seed=i) for i in range(n_trials)]
 
         avg_ms = statistics.fmean(trials)
         median_ms = statistics.median(trials)
@@ -99,4 +99,4 @@ def _characterize_threads(thread_counts: tuple[int, ...], n_trials: int) -> None
 
 
 if __name__ == "__main__":
-    _characterize_threads(thread_counts=(1, 2, 4, 8), n_trials=80)
+    _characterize_threads(thread_counts=(1, 1, 1, 1), n_trials=80)
