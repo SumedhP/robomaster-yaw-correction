@@ -29,6 +29,7 @@
 #include <thread>
 #include <tuple>
 #include "utils.hpp"
+#include <condition_variable>
 
 namespace py = pybind11;
 
@@ -142,6 +143,92 @@ static inline double squared_reprojection_error(
 }
 
 // ---------------------------------------------------------------------------
+// Persistent two-thread pool for Brent searches.
+// Threads are created once (on first call) and reused forever.
+// ---------------------------------------------------------------------------
+
+struct BrentPool {
+    struct Job {
+        const SolveInputs* inputs = nullptr;
+        double lo = 0, hi = 0;
+        std::pair<double,double> result;
+        bool ready = false;   // input ready for worker
+        bool done  = false;   // worker finished
+    };
+
+    std::array<Job, 2>              jobs;
+    std::array<std::thread, 2>      threads;
+    std::array<std::mutex, 2>       mtx;
+    std::array<std::condition_variable, 2> cv;
+    bool shutdown = false;
+
+    BrentPool() {
+        for (int id = 0; id < 2; ++id) {
+            threads[id] = std::thread([this, id] {
+                while (true) {
+                    std::unique_lock lk(mtx[id]);
+                    cv[id].wait(lk, [&] { return jobs[id].ready || shutdown; });
+                    if (shutdown) return;
+
+                    auto& job = jobs[id];
+                    boost::uintmax_t max_iter = 200;
+                    int bits = static_cast<int>(std::ceil(
+                        std::log2((job.hi - job.lo) / kYawTolRad)));
+
+                    job.result = boost::math::tools::brent_find_minima(
+                        [&](double y) {
+                            return squared_reprojection_error(*job.inputs, y);
+                        },
+                        job.lo, job.hi, bits, max_iter);
+
+                    job.ready = false;
+                    job.done  = true;
+                    lk.unlock();
+                    cv[id].notify_one();
+                }
+            });
+        }
+    }
+
+    ~BrentPool() {
+        shutdown = true;
+        for (int id = 0; id < 2; ++id) {
+            cv[id].notify_one();
+            threads[id].join();
+        }
+    }
+
+    // Submit both jobs and block until both finish.
+    void run(const SolveInputs& inp,
+             double lo1, double hi1,
+             double lo2, double hi2)
+    {
+        // Set up jobs
+        for (int id = 0; id < 2; ++id) {
+            std::lock_guard lk(mtx[id]);
+            jobs[id].inputs = &inp;
+            jobs[id].lo     = (id == 0) ? lo1 : lo2;
+            jobs[id].hi     = (id == 0) ? hi1 : hi2;
+            jobs[id].done   = false;
+            jobs[id].ready  = true;
+        }
+        // Wake both workers
+        cv[0].notify_one();
+        cv[1].notify_one();
+
+        // Wait for both to finish
+        for (int id = 0; id < 2; ++id) {
+            std::unique_lock lk(mtx[id]);
+            cv[id].wait(lk, [&] { return jobs[id].done; });
+        }
+    }
+
+    static constexpr double kYawTolRad = 0.1 * (M_PI / 180.0);
+};
+
+static BrentPool g_pool; 
+
+// ---------------------------------------------------------------------------
 // solve_yaw — public entry point
 // ---------------------------------------------------------------------------
 
@@ -186,25 +273,13 @@ static std::tuple<double, double> solve_yaw(
     // thread 2 near lo+3*span/4 (≈3/4). Covers both U and W cost shapes.
     const double mid = 0.5 * (yaw_lo + yaw_hi);
 
-    // Tolerance: 0.1 degrees
-    static constexpr double kYawTolRad = 0.1 * (M_PI / 180.0);
-    const int kBrentBits = static_cast<int>(std::ceil(std::log2((yaw_hi - yaw_lo) / kYawTolRad)));
-
-    std::pair<double,double> res1, res2; // {yaw, sq}
-
-    auto run_brent = [&](double lo, double hi, std::pair<double,double>& out) {
-        boost::uintmax_t max_iter = 200;
-        out = boost::math::tools::brent_find_minima(
-            [&](double y) { return squared_reprojection_error(inputs, y); },
-            lo, hi, kBrentBits, max_iter);
-    };
+    std::pair<double,double> res1, res2;
 
     {
         py::gil_scoped_release release;
-        std::thread t1([&] { run_brent(yaw_lo, mid, res1); });
-        std::thread t2([&] { run_brent(mid, yaw_hi, res2); });
-        t1.join();
-        t2.join();
+        g_pool.run(inputs, yaw_lo, mid, mid, yaw_hi);
+        res1 = g_pool.jobs[0].result;
+        res2 = g_pool.jobs[1].result;
     }
 
     // Pick whichever half found the lower cost.
