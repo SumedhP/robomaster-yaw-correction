@@ -248,9 +248,9 @@ static BrentPool g_pool;
  *   yaw_lo        : double          – search lower bound  (default -π/2)
  *   yaw_hi        : double          – search upper bound  (default +π/2)
  *
- * Returns: (optimized_yaw: double, reprojection_rms_pixels: double)
+ * Returns: result 1 yaw, result 1 rms, result 2 yaw, result 2 rms
  */
-static std::tuple<double, double> solve_yaw(
+static std::tuple<double, double, double, double> solve_yaw(
     py::array_t<double> image_points,
     py::array_t<double> position_xyz,
     py::array_t<double> plate_matrix,
@@ -282,10 +282,9 @@ static std::tuple<double, double> solve_yaw(
         res2 = g_pool.jobs[1].result;
     }
 
-    // Pick whichever half found the lower cost.
-    const auto& best = (res1.second <= res2.second) ? res1 : res2;
-    const double rms = std::sqrt(0.25 * best.second);
-    return {best.first, rms};
+    // Return both results
+    return {res1.first, std::sqrt(0.25 * res1.second),
+           res2.first, std::sqrt(0.25 * res2.second)};
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +320,6 @@ Args:
     yaw_hi        (float): search upper bound, default +pi/2
 
 Returns:
-    tuple[float, float]: (best_yaw_rad, reprojection_error_pixels_rms)
+    tuple[float, float, float, float]: (result1_yaw, result1_rms, result2_yaw, result2_rms)
 )doc");
 }
