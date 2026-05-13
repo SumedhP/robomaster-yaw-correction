@@ -20,15 +20,16 @@ namespace py = pybind11;
 // Constants
 // ---------------------------------------------------------------------------
 
-static constexpr double kYawTolRad   = 0.1 * (M_PI / 180.0);
-static constexpr int    kBrentBits   = static_cast<int>(
+static constexpr double kYawTolRad = 0.1 * (M_PI / 180.0);
+static constexpr int kBrentBits = static_cast<int>(
     std::ceil(std::log2(M_PI / kYawTolRad))); // worst-case bits for [-π/2, π/2]
 
 // ---------------------------------------------------------------------------
 // Input bundle
 // ---------------------------------------------------------------------------
 
-struct SolveInputs {
+struct SolveInputs
+{
     // 4 object points as columns: [p0 | p1 | p2 | p3], shape 3×4
     Eigen::Matrix<double, 3, 4> obj_pts;
 
@@ -57,10 +58,10 @@ static SolveInputs unpack_inputs(
     double fixed_pitch,
     double fixed_roll)
 {
-    auto ip  = image_points.unchecked<2>();   // (4,2)
-    auto pos = position_xyz.unchecked<1>();   // (3,)
-    auto pm  = plate_matrix.unchecked<2>();   // (4,3)
-    auto km  = camera_matrix.unchecked<2>();  // (3,3)
+    auto ip = image_points.unchecked<2>();  // (4,2)
+    auto pos = position_xyz.unchecked<1>(); // (3,)
+    auto pm = plate_matrix.unchecked<2>();  // (4,3)
+    auto km = camera_matrix.unchecked<2>(); // (3,3)
 
     if (ip.shape(0) != 4 || ip.shape(1) != 2)
         throw std::invalid_argument("image_points must be shape (4, 2)");
@@ -73,21 +74,26 @@ static SolveInputs unpack_inputs(
 
     SolveInputs inp{};
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 4; ++i)
+    {
         inp.observed(0, i) = ip(i, 0);
         inp.observed(1, i) = ip(i, 1);
-        inp.obj_pts(0, i)  = pm(i, 0);
-        inp.obj_pts(1, i)  = pm(i, 1);
-        inp.obj_pts(2, i)  = pm(i, 2);
+        inp.obj_pts(0, i) = pm(i, 0);
+        inp.obj_pts(1, i) = pm(i, 1);
+        inp.obj_pts(2, i) = pm(i, 2);
     }
 
-    inp.t = { pos(0), pos(1), pos(2) };
+    inp.t = {pos(0), pos(1), pos(2)};
 
-    inp.fx = km(0, 0); inp.fy = km(1, 1);
-    inp.cx = km(0, 2); inp.cy = km(1, 2);
+    inp.fx = km(0, 0);
+    inp.fy = km(1, 1);
+    inp.cx = km(0, 2);
+    inp.cy = km(1, 2);
 
-    inp.sin_pitch = std::sin(fixed_pitch); inp.cos_pitch = std::cos(fixed_pitch);
-    inp.sin_roll  = std::sin(fixed_roll);  inp.cos_roll  = std::cos(fixed_roll);
+    inp.sin_pitch = std::sin(fixed_pitch);
+    inp.cos_pitch = std::cos(fixed_pitch);
+    inp.sin_roll = std::sin(fixed_roll);
+    inp.cos_roll = std::cos(fixed_roll);
 
     return inp;
 }
@@ -98,16 +104,16 @@ static SolveInputs unpack_inputs(
 // ---------------------------------------------------------------------------
 
 static inline Eigen::Matrix3d build_rotation(
-    const SolveInputs& inp, double yaw) noexcept
+    const SolveInputs &inp, double yaw) noexcept
 {
     const double cy = std::cos(yaw), sy = std::sin(yaw);
-    const double cp = inp.cos_pitch,  sp = inp.sin_pitch;
-    const double cr = inp.cos_roll,   sr = inp.sin_roll;
+    const double cp = inp.cos_pitch, sp = inp.sin_pitch;
+    const double cr = inp.cos_roll, sr = inp.sin_roll;
 
     Eigen::Matrix3d R;
-    R << cy*cp,          cy*sp*sr - sy*cr,  cy*sp*cr + sy*sr,
-         sy*cp,          sy*sp*sr + cy*cr,  sy*sp*cr - cy*sr,
-        -sp,             cp*sr,             cp*cr;
+    R << cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr,
+        sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr,
+        -sp, cp * sr, cp * cr;
     return R;
 }
 
@@ -124,7 +130,7 @@ static inline Eigen::Matrix3d build_rotation(
 // ---------------------------------------------------------------------------
 
 static inline double squared_reprojection_error(
-    const SolveInputs& inp, double yaw) noexcept
+    const SolveInputs &inp, double yaw) noexcept
 {
     // Transform all 4 points at once: cam_pts = R * obj_pts + t (broadcast)
     const Eigen::Matrix<double, 3, 4> cam =
@@ -149,17 +155,23 @@ static inline double squared_reprojection_error(
 // Created once on first solve call via a local static.
 // ---------------------------------------------------------------------------
 
-class BrentPool {
+class BrentPool
+{
 public:
-    BrentPool() {
-        for (int id = 0; id < 2; ++id) {
-            workers_[id] = std::thread([this, id] { worker_loop(id); });
+    BrentPool()
+    {
+        for (int id = 0; id < 2; ++id)
+        {
+            workers_[id] = std::thread([this, id]
+                                       { worker_loop(id); });
         }
     }
 
-    ~BrentPool() {
+    ~BrentPool()
+    {
         shutdown_ = true;
-        for (int id = 0; id < 2; ++id) {
+        for (int id = 0; id < 2; ++id)
+        {
             cv_[id].notify_one();
             workers_[id].join();
         }
@@ -167,60 +179,68 @@ public:
 
     // Returns {yaw, cost} for each half.
     std::array<std::pair<double, double>, 2> run(
-        const SolveInputs& inp,
+        const SolveInputs &inp,
         double lo, double mid, double hi)
     {
-        bounds_[0] = {lo,  mid};
+        bounds_[0] = {lo, mid};
         bounds_[1] = {mid, hi};
 
-        for (int id = 0; id < 2; ++id) {
+        for (int id = 0; id < 2; ++id)
+        {
             std::lock_guard lk(mtx_[id]);
             inputs_[id] = &inp;
-            done_[id]   = false;
-            ready_[id]  = true;
+            done_[id] = false;
+            ready_[id] = true;
         }
         cv_[0].notify_one();
         cv_[1].notify_one();
 
-        for (int id = 0; id < 2; ++id) {
+        for (int id = 0; id < 2; ++id)
+        {
             std::unique_lock lk(mtx_[id]);
-            cv_[id].wait(lk, [&] { return done_[id]; });
+            cv_[id].wait(lk, [&]
+                         { return done_[id]; });
         }
 
         return {results_[0], results_[1]};
     }
 
 private:
-    void worker_loop(int id) {
-        while (true) {
+    void worker_loop(int id)
+    {
+        while (true)
+        {
             std::unique_lock lk(mtx_[id]);
-            cv_[id].wait(lk, [&] { return ready_[id] || shutdown_; });
-            if (shutdown_) return;
+            cv_[id].wait(lk, [&]
+                         { return ready_[id] || shutdown_; });
+            if (shutdown_)
+                return;
 
             boost::uintmax_t max_iter = 200;
             results_[id] = boost::math::tools::brent_find_minima(
-                [&](double y) {
+                [&](double y)
+                {
                     return squared_reprojection_error(*inputs_[id], y);
                 },
                 bounds_[id].first, bounds_[id].second,
                 kBrentBits, max_iter);
 
             ready_[id] = false;
-            done_[id]  = true;
+            done_[id] = true;
             lk.unlock();
             cv_[id].notify_one();
         }
     }
 
-    std::array<std::thread, 2>              workers_;
-    std::array<std::mutex, 2>               mtx_;
-    std::array<std::condition_variable, 2>  cv_;
-    std::array<const SolveInputs*, 2>       inputs_{};
+    std::array<std::thread, 2> workers_;
+    std::array<std::mutex, 2> mtx_;
+    std::array<std::condition_variable, 2> cv_;
+    std::array<const SolveInputs *, 2> inputs_{};
     std::array<std::pair<double, double>, 2> bounds_{};
     std::array<std::pair<double, double>, 2> results_{};
-    std::array<bool, 2>                     ready_   = {false, false};
-    std::array<bool, 2>                     done_    = {false, false};
-    bool                                    shutdown_ = false;
+    std::array<bool, 2> ready_ = {false, false};
+    std::array<bool, 2> done_ = {false, false};
+    bool shutdown_ = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -265,7 +285,7 @@ static std::tuple<double, double, double, double> solve_yaw(
         image_points, position_xyz, plate_matrix, camera_matrix,
         fixed_pitch, fixed_roll);
 
-    const double mid = 0.5 * (yaw_lo + yaw_hi);
+    double mid = 0.5 * (yaw_lo + yaw_hi);
 
     // Lazy-init pool — avoids global destructor ordering issues.
     static BrentPool pool;
@@ -273,13 +293,54 @@ static std::tuple<double, double, double, double> solve_yaw(
     std::array<std::pair<double, double>, 2> res;
     {
         py::gil_scoped_release release;
+
+        // Do a 20-point coarse search to see if a hump exists, if so set that as the mid
+        // Hump is found if previous cost is less than current cost and next cost is less than current cost
+        bool has_hump = false;
+        double prev_cost = squared_reprojection_error(inputs, yaw_lo);
+        for (int i = 1; i < 20; ++i)
+        {
+            double yaw = yaw_lo + i * (yaw_hi - yaw_lo) / 20;
+            double cost = squared_reprojection_error(inputs, yaw);
+            if (cost > prev_cost)
+            {
+                double next_cost = squared_reprojection_error(inputs, yaw_lo + (i + 1) * (yaw_hi - yaw_lo) / 20);
+                if (next_cost < cost) {
+                    mid = yaw;
+                    has_hump = true;
+                    break;
+                }
+            }
+            prev_cost = cost;
+        }
+
         res = pool.run(inputs, yaw_lo, mid, yaw_hi);
     }
 
     return {
         res[0].first, std::sqrt(0.25 * res[0].second),
-        res[1].first, std::sqrt(0.25 * res[1].second)
-    };
+        res[1].first, std::sqrt(0.25 * res[1].second)};
+}
+
+static std::array<double, 100> getReprojErr(
+    py::array_t<double> image_points,
+    py::array_t<double> position_xyz,
+    py::array_t<double> plate_matrix,
+    py::array_t<double> camera_matrix,
+    double fixed_pitch,
+    double fixed_roll,
+    double yaw_lo,
+    double yaw_hi) {
+    // Sweep through all yaws and get reprojection error for each.
+    const SolveInputs inputs = unpack_inputs(
+        image_points, position_xyz, plate_matrix, camera_matrix,
+        fixed_pitch, fixed_roll);
+    std::array<double, 100> errors;
+    for (int i = 0; i < 100; ++i) {
+        double yaw = yaw_lo + i * (yaw_hi - yaw_lo) / 99;
+        errors[i] = std::sqrt(0.25 * squared_reprojection_error(inputs, yaw));
+    }
+    return errors;
 }
 
 // ---------------------------------------------------------------------------
@@ -291,12 +352,22 @@ PYBIND11_MODULE(_rm_pose_solver, m)
     m.doc() = "RoboMaster pose solver — dual Brent minimization via Boost.Math + Eigen";
 
     m.def("solve_yaw", &solve_yaw,
-        py::arg("image_points"),
-        py::arg("position_xyz"),
-        py::arg("plate_matrix"),
-        py::arg("camera_matrix"),
-        py::arg("fixed_pitch"),
-        py::arg("fixed_roll"),
-        py::arg("yaw_lo") = -M_PI / 2.0,
-        py::arg("yaw_hi") =  M_PI / 2.0);
+          py::arg("image_points"),
+          py::arg("position_xyz"),
+          py::arg("plate_matrix"),
+          py::arg("camera_matrix"),
+          py::arg("fixed_pitch"),
+          py::arg("fixed_roll"),
+          py::arg("yaw_lo") = -M_PI / 2.0,
+          py::arg("yaw_hi") = M_PI / 2.0);
+
+    m.def("get_reproj_err", &getReprojErr,
+          py::arg("image_points"),
+          py::arg("position_xyz"),
+          py::arg("plate_matrix"),
+          py::arg("camera_matrix"),
+          py::arg("fixed_pitch"),
+          py::arg("fixed_roll"),
+          py::arg("yaw_lo") = -M_PI / 2.0,
+          py::arg("yaw_hi") = M_PI / 2.0);
 }

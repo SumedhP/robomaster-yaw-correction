@@ -19,7 +19,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "rm-pose-solver"
-version = "0.5.0"
+version = "0.5.1"
 description = "RoboMaster plate pose solver: dual-Brent yaw optimisation via Boost.Math"
 readme = "README.md"
 license = { text = "MIT" }

@@ -59,10 +59,11 @@ def _load_extension_from_site_packages() -> ModuleType:
 
 
 try:
-    from ._rm_pose_solver import solve_yaw  # pyright: ignore[reportMissingModuleSource]
+    from ._rm_pose_solver import solve_yaw, get_reproj_err  # pyright: ignore[reportMissingModuleSource]
 except ModuleNotFoundError as exc:
     if exc.name != "rm_pose_solver._rm_pose_solver":
         raise
     solve_yaw = _load_extension_from_site_packages().solve_yaw
+    get_reproj_err = _load_extension_from_site_packages().get_reproj_err
 
-__all__ = ["solve_yaw"]
+__all__ = ["solve_yaw", "get_reproj_err"]
