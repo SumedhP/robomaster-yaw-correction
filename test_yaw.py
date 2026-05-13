@@ -1,14 +1,10 @@
 import numpy as np
 import math
 from rm_pose_solver import solve_yaw, get_reproj_err
+import matplotlib.pyplot as plt
 
-
-image_points = np.array([[829.5, 304.1015625], # BL
-                         [835.5, 277.3828125], # TL
-                        [900.75, 294.78515625], # TR
-                        [894.75, 321.50390625]]) # BR
-
-our_position = np.array([1.3890000581741333, -0.7677931189537048, -0.0541527234017849])
+plate_roll = 0
+plate_pitch = np.radians(15) # in world frame
 
 plate_positions = np.array([[0, 0.0675, -0.028],
                             [0, 0.0675, 0.028],
@@ -19,44 +15,65 @@ camera_matrix = np.array([[692.49749756, 0., 481.71038818],
                           [0., 692.60083008, 271.99768066],
                           [0., 0., 1.]])
 
-camera_pitch = 0.22989439487457278 # Radians, positive is looking down
-camera_roll = 0.0 # Radians, positive is rolling left
+def pitch_down_output():
+    image_points = np.array([[417., 122.51953125], # BL
+                            [421.125, 94.48242188], # TL
+                            [474.75, 105.29296875], # TR
+                            [471., 132.97851562]]) # BR
 
-plate_roll = 0
-plate_pitch = np.radians(15) # in world frame
+    our_position = np.array([1.4359999895095825, 0.07508780807256699, 0.3296569585800171])
 
-plate_world_roll = plate_roll - camera_roll
-plate_world_pitch = plate_pitch - camera_pitch
+    camera_pitch = 0.44916113734245294 # Radians, positive is looking down
+    camera_roll = 0.0 # Radians, positive is rolling left
 
-yaw1, res1, yaw2, res2 = solve_yaw(image_points, our_position, plate_positions, camera_matrix, plate_world_pitch, plate_world_roll)
+    yaw1, res1, yaw2, res2 = solve_yaw(image_points, our_position, plate_positions, camera_matrix, plate_pitch, plate_roll, camera_pitch, camera_roll)
+    print(f"Pitch down scenario:")
+    print(f"Yaw 1: {math.degrees(yaw1)} degrees, Residual: {math.sqrt(res1 / 4.0)}")
+    print(f"Yaw 2: {math.degrees(yaw2)} degrees, Residual: {math.sqrt(res2 / 4.0)}")
+    
+    reproj_errors = get_reproj_err(image_points, our_position, plate_positions, camera_matrix, plate_pitch, plate_roll, camera_pitch, camera_roll)
+    yaws = np.linspace(-np.pi/2, np.pi/2, 100)
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(np.degrees(yaws), reproj_errors, label='Reprojection Error')
+    plt.xlabel('Yaw (degrees)')
+    plt.ylabel('Squred Reprojection Error (pixels^2)')
+    plt.title('Pitch Down: Squared Reprojection Error vs Yaw')
+    plt.axvline(np.degrees(yaw1), color='r', linestyle='--', label=f'Optimal Yaw 1: {math.degrees(yaw1):.2f}°')
+    plt.axvline(np.degrees(yaw2), color='g', linestyle='--', label=f'Optimal Yaw 2: {math.degrees(yaw2):.2f}°')
+    plt.legend()
+    plt.grid()
+    plt.savefig('pitch_down_reprojection_error_vs_yaw.png')
 
-print(f"Yaw 1: {math.degrees(yaw1)} degrees, Residual: {res1}")
-print(f"Yaw 2: {math.degrees(yaw2)} degrees, Residual: {res2}")
+def pitch_up_output():
+    image_points = np.array([[428.625, 402.890625], # BL
+                             [433.5, 376.875], # TL
+                            [484.5, 386.3671875], # TR
+                            [480.375, 412.734375]]) # BR
 
-import timeit
+    our_position = np.array([1.4479999542236328, 0.05375996232032776, -0.2550666332244873])
+    camera_pitch = 0.08176711469888688 # Radians, positive is looking down
+    camera_roll = 0.0 # Radians, positive is rolling left
 
-def benchmark():
-    solve_yaw(image_points, our_position, plate_positions, camera_matrix, plate_world_pitch, plate_world_roll)
+    yaw1, res1, yaw2, res2 = solve_yaw(image_points, our_position, plate_positions, camera_matrix, plate_pitch, plate_roll, camera_pitch, camera_roll)
+    print(f"\nPitch up scenario:")
+    print(f"Yaw 1: {math.degrees(yaw1)} degrees, Residual: {math.sqrt(res1 / 4.0)}")
+    print(f"Yaw 2: {math.degrees(yaw2)} degrees, Residual: {math.sqrt(res2 / 4.0)}")
 
-N = 1000
-execution_time = timeit.timeit(benchmark, number=N)
-print(f"Average execution time over {N} runs: {(execution_time / N)*1000:.6f} milliseconds")
+    reproj_errors = get_reproj_err(image_points, our_position, plate_positions, camera_matrix, plate_pitch, plate_roll, camera_pitch, camera_roll)
+    yaws = np.linspace(-np.pi/2, np.pi/2, 100)
+    
+    plt.figure(figsize=(8, 6))
+    plt.plot(np.degrees(yaws), reproj_errors, label='Reprojection Error')
+    plt.xlabel('Yaw (degrees)')
+    plt.ylabel('Squred Reprojection Error (pixels^2)')
+    plt.title('Pitch Up: Squared Reprojection Error vs Yaw')
+    plt.axvline(np.degrees(yaw1), color='r', linestyle='--', label=f'Optimal Yaw 1: {math.degrees(yaw1):.2f}°')
+    plt.axvline(np.degrees(yaw2), color='g', linestyle='--', label=f'Optimal Yaw 2: {math.degrees(yaw2):.2f}°')
+    plt.legend()
+    plt.grid()
+    plt.savefig('pitch_up_reprojection_error_vs_yaw.png')
 
-reproj_errors = get_reproj_err(image_points, our_position, plate_positions, camera_matrix, plate_world_pitch, plate_world_roll)
-yaws = np.linspace(-np.pi/2, np.pi/2, 100)
-
-# for yaw, err in zip(yaws, reproj_errors):
-#     print(f"Yaw: {math.degrees(yaw):.2f} degrees, Reprojection Error: {err:.4f} pixels")
-
-import matplotlib.pyplot as plt
-# Plot just the reprojection errors across line
-plt.figure(figsize=(8, 6))
-plt.plot(np.degrees(yaws), reproj_errors, label='Reprojection Error')
-plt.xlabel('Yaw (degrees)')
-plt.ylabel('Reprojection Error (pixels)')
-plt.title('Reprojection Error vs Yaw')
-plt.axvline(np.degrees(yaw1), color='r', linestyle='--', label=f'Optimal Yaw 1: {math.degrees(yaw1):.2f}°')
-plt.axvline(np.degrees(yaw2), color='g', linestyle='--', label=f'Optimal Yaw 2: {math.degrees(yaw2):.2f}°')
-plt.legend()
-plt.grid()
-plt.savefig('reprojection_error_vs_yaw.png')
+if __name__ == "__main__":
+    pitch_down_output()
+    pitch_up_output()
