@@ -1,9 +1,11 @@
 #include <opencv2/opencv.hpp>
 
-
-/// Rodrigues rotation vector from ZYX Euler angles (yaw, pitch, roll) in radians.
-/// Convention: R = Rz(yaw) * Ry(pitch) * Rx(roll)
-static inline cv::Vec3d euler_to_rvec_fast(
+/// Rodrigues rotation vector from ZYX Euler angles in OpenCV coordinates.
+/// OpenCV convention: X-right, Y-down, Z-forward.
+/// Rotation order: R = Rz(yaw) * Ry(pitch) * Rx(roll)
+/// where yaw rotates about Z (forward), pitch about Y (down), roll about X (right).
+/// Caller is responsible for converting angles from their own frame beforehand.
+static inline cv::Vec3d euler_to_rvec(
     double yaw,
     double sin_pitch,
     double cos_pitch,
@@ -13,6 +15,9 @@ static inline cv::Vec3d euler_to_rvec_fast(
     const double cy = std::cos(yaw);
     const double sy = std::sin(yaw);
 
+    // R = Rz(yaw) * Ry(pitch) * Rx(roll), fully expanded.
+    // Identical algebraic form to before — the frame is now baked into
+    // what the caller passes in, not handled here.
     const cv::Matx33d R(
         cy * cos_pitch,
         cy * sin_pitch * sin_roll - sy * cos_roll,
@@ -29,12 +34,4 @@ static inline cv::Vec3d euler_to_rvec_fast(
     cv::Vec3d rvec;
     cv::Rodrigues(R, rvec);
     return rvec;
-}
-
-/// Convert an axis-angle vector from Otto standard coordinates to OpenCV coordinates.
-/// From X-forward, Y-right, Z-down to X-right, Y-down, Z-forward.
-/// Matches Orientation.to_cv2_coords(): (-y, -z, x)
-static inline cv::Vec3d standard_rvec_to_cv2(const cv::Vec3d& rvec_std)
-{
-    return cv::Vec3d(-rvec_std[1], -rvec_std[2], rvec_std[0]);
 }

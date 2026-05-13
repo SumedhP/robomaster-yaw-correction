@@ -112,13 +112,12 @@ static SolveInputs unpack_inputs(
 static inline double squared_reprojection_error(
     const SolveInputs& inp, double yaw) noexcept
 {
-    const cv::Vec3d rv_cv2 = standard_rvec_to_cv2(
-        euler_to_rvec_fast(yaw,
-            inp.sin_pitch, inp.cos_pitch,
-            inp.sin_roll,  inp.cos_roll));
+    const cv::Vec3d rv = euler_to_rvec(yaw,
+        inp.sin_pitch, inp.cos_pitch,
+        inp.sin_roll,  inp.cos_roll);
 
     cv::Matx33d R;
-    cv::Rodrigues(rv_cv2, R);
+    cv::Rodrigues(rv, R);
 
     const double r00=R(0,0), r01=R(0,1), r02=R(0,2);
     const double r10=R(1,0), r11=R(1,1), r12=R(1,2);
