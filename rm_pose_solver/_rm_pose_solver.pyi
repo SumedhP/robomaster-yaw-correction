@@ -11,22 +11,23 @@ def solve_yaw(
     position_xyz: Float64Array,
     plate_matrix: Float64Array,
     camera_matrix: Float64Array,
-    dist_coeffs: Float64Array,
-    fixed_pitch: float,
-    fixed_roll: float,
+    plate_pitch: float,
+    plate_roll: float,
+    cam_pitch: float,
+    cam_roll: float,
     yaw_lo: float = ...,
     yaw_hi: float = ...,
-    max_iter: int = ...,
-) -> tuple[float, float]: ...
+) -> tuple[float, float, float, float]: ...
 
-
-def solve_yaw_brute_force(
+def get_reproj_err(
     image_points: Float64Array,
     position_xyz: Float64Array,
     plate_matrix: Float64Array,
     camera_matrix: Float64Array,
-    dist_coeffs: Float64Array,
-    fixed_pitch: float,
-    fixed_roll: float,
-    sweep_steps: int = ...,
-) -> tuple[float, float]: ...
+    plate_pitch: float,
+    plate_roll: float,
+    cam_pitch: float,
+    cam_roll: float,
+    yaw_lo: float = ...,
+    yaw_hi: float = ...,
+) -> Float64Array: ...
