@@ -2,7 +2,8 @@
 requires = [
     "scikit-build-core>=0.9",
     "pybind11>=2.12",
-    "numpy>=1.20, <2.0"
+    "numpy>=1.20, <2.0",
+    "matplotlib"
 ]
 build-backend = "scikit_build_core.build"
 
